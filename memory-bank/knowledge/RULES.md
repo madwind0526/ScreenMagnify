@@ -28,6 +28,6 @@
 
 ## P-04: 배포물
 
-**규칙:** 배포는 `npm run dist`(폴더형 zip, `asar:false`). 모델(`models/*.onnx`)과 `release/`, `store/`, `tools/`는 git에 넣지 않는다. 릴리스 zip에는 모델이 포함된다.
-**이유:** 64 MB 모델로 저장소가 비대해지는 것을 방지, MusicCube와 같은 배포 방식.
+**규칙:** 배포는 `npm run dist`(폴더형 zip, `asar:false`). `release/`, `store/`, `tools/`는 git에 넣지 않는다. 모델(`models/realesrgan_x4plus.onnx`, 64 MB)은 git에 포함하고 릴리스 zip에도 포함된다.
+**이유:** 저장소만 받아도 AI가 동작하도록(사용자 결정). 100 MB 제한 이내이므로 LFS 불필요, 더 큰 모델을 추가하면 LFS 검토.
 **적용 시점:** 릴리스 시.

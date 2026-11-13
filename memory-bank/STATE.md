@@ -17,5 +17,5 @@
 ## Session Notes
 
 - 릴리스: GitHub `madwind0526/ScreenMagnify` v1.0.0 (`ScreenMagnify-1.0.0.zip`, 폴더형, 서명 없음)
-- 모델 파일(`models/realesrgan_x4plus.onnx`, 64 MB)은 git에 없고 릴리스 zip에만 포함
+- 모델 파일(`models/realesrgan_x4plus.onnx`, 64 MB)은 git과 릴리스 zip 모두에 포함
 - 보류된 리뷰 항목: WebGL 컨텍스트/텍스처 공유, NIS 1x 우회, overlay dim 구조 변경, fs API 최소화/CSP

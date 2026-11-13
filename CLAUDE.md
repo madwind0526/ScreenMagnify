@@ -48,7 +48,7 @@ When launching Electron from the Claude shell, unset `ELECTRON_RUN_AS_NODE` firs
 
 - `scripts/capture-docs.cjs` runs the real `main.js` with a throw-away profile (`app.setPath('userData', tmp)`) and drives the windows by dispatching events; it is the closest thing to an end-to-end check.
 - The packaged app is checked from `release/win-unpacked/ScreenMagnify.exe`; the AI worker can be exercised with `ELECTRON_RUN_AS_NODE=1 ScreenMagnify.exe <script>`.
-- The model is not in git: `models/realesrgan_x4plus.onnx` must exist for the AI method and for `npm run dist` (it is copied to `resources/models`).
+- `models/realesrgan_x4plus.onnx` (64 MB, committed) must exist for the AI method and for `npm run dist` (it is copied to `resources/models`).
 
 ## Global requirements
 

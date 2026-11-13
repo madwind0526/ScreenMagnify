@@ -52,7 +52,7 @@ npm run screenshots  # store/cutouts/*.png from the real windows (needs a deskto
 python scripts/store-mockup.py   # compose the store images in store/promo
 ```
 
-The AI model is not in git (64 MB). Put the ONNX export of **RealESRGAN_x4plus** at `models/realesrgan_x4plus.onnx` (input `input`, 1x3xHxW, float 0..1; output 4x larger); the release zip already contains it.
+The AI model, the ONNX export of **RealESRGAN_x4plus** (64 MB; input `input`, 1x3xHxW, float 0..1; output 4x larger), is in the repository at `models/realesrgan_x4plus.onnx` and in the release zip.
 
 When launching Electron from a shell that runs under Claude Code or VS Code, unset `ELECTRON_RUN_AS_NODE` first.
 
