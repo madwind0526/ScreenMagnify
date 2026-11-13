@@ -1,0 +1,945 @@
+const { app, BrowserWindow, ipcMain, screen, desktopCapturer, session, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { Worker } = require('worker_threads');
+
+const APP_NAME = 'ScreenMagnify';
+const METHOD_IDS = [
+  'nearest',
+  'bilinear',
+  'bicubic-catmull',
+  'lanczos3',
+  'nis',
+  'realesrgan'
+];
+const SHAPES = ['rect', 'ellipse', 'free'];
+const DEFAULT_SETTINGS = {
+  alwaysOnTop: true,
+  freeze: true,
+  delay: 0,
+  aiDevice: 'cpu',
+  method: 'realesrgan',
+  panelCount: 1,
+  theme: 'dark',
+  shape: 'rect',
+  lastSaveDir: '',
+  customPaths: []
+};
+
+let settings = { ...DEFAULT_SETTINGS, customPaths: [] };
+let mainWindow = null;
+let resultWindow = null;
+let settingsWindow = null;
+let settingsWasOpen = false;
+let overlayWindows = [];
+let pendingCaptureDisplayId = null;
+
+const selection = {
+  active: false,
+  shape: 'rect',
+  waitTimer: null,
+  waitResolve: null
+};
+
+let aiWorker = null;
+let aiSeq = 0;
+let aiProvider = null;
+const aiPending = new Map();
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+app.setAppUserModelId('com.screenmagnify.app');
+
+function settingsFile() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(settingsFile(), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      settings = { ...DEFAULT_SETTINGS, ...parsed };
+      // Migrate old on/off checkboxes: an unchecked option meant its neutral value.
+      if (parsed.delayOn === false) settings.delay = 0;
+      if (parsed.panelsOn === false) settings.panelCount = 1;
+      if (parsed.methodOn === false) settings.method = 'nearest';
+      delete settings.delayOn;
+      delete settings.methodOn;
+      delete settings.panelsOn;
+    }
+  } catch {
+    settings = { ...DEFAULT_SETTINGS, customPaths: [] };
+  }
+  validateSettings();
+}
+
+function validateSettings() {
+  settings.alwaysOnTop = !!settings.alwaysOnTop;
+  settings.freeze = !!settings.freeze;
+  if (settings.aiDevice !== 'gpu') settings.aiDevice = 'cpu';
+  settings.delay = Math.max(0, Math.min(10, Math.round(Number(settings.delay) || 0)));
+  if (!METHOD_IDS.includes(settings.method)) settings.method = DEFAULT_SETTINGS.method;
+  if (!SHAPES.includes(settings.shape)) settings.shape = 'rect';
+  settings.panelCount = Math.max(1, Math.min(3, Math.round(Number(settings.panelCount) || 1)));
+  // NIS is GPU-only.
+  if (settings.aiDevice !== 'gpu' && settings.method === 'nis') settings.method = 'lanczos3';
+  if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark';
+  if (typeof settings.lastSaveDir !== 'string') settings.lastSaveDir = '';
+  if (!Array.isArray(settings.customPaths)) settings.customPaths = [];
+  settings.customPaths = settings.customPaths
+    .filter((item) => item && typeof item.path === 'string' && item.path.trim())
+    .map((item) => ({
+      label: String(item.label || path.basename(item.path) || item.path),
+      path: path.resolve(item.path)
+    }))
+    .filter((item, index, list) => list.findIndex((other) => other.path === item.path) === index)
+    .slice(0, 12);
+}
+
+function saveSettings() {
+  try {
+    const file = settingsFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(settings, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+  }
+}
+
+function broadcast(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      try {
+        win.webContents.send(channel, payload);
+      } catch {
+        // Window may be closing.
+      }
+    }
+  }
+}
+
+// "Always on top" applies to every app window (main, settings, result); selection overlays manage their own level.
+function applyAlwaysOnTop() {
+  for (const win of [mainWindow, settingsWindow, resultWindow]) {
+    if (win && !win.isDestroyed()) win.setAlwaysOnTop(settings.alwaysOnTop);
+  }
+}
+
+function preloadPath() {
+  return path.join(__dirname, 'preload.js');
+}
+
+function iconPath() {
+  const file = path.join(__dirname, '..', 'public', 'assets', 'icon.png');
+  return fs.existsSync(file) ? file : undefined;
+}
+
+function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 380,
+    height: 132,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    frame: false,
+    show: false,
+    alwaysOnTop: settings.alwaysOnTop,
+    title: APP_NAME,
+    icon: iconPath(),
+    transparent: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: preloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  mainWindow.setContentProtection(true);
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.loadFile(path.join(__dirname, '..', 'public', 'index.html'));
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    cancelSelection(false, 'cancelled');
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.destroy();
+    if (resultWindow && !resultWindow.isDestroyed()) resultWindow.destroy();
+    resultWindow = null;
+  });
+}
+
+function toggleSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.close();
+    return;
+  }
+  const bounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 100, y: 100, width: 380, height: 160 };
+  settingsWindow = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y + bounds.height + 8,
+    width: 280,
+    height: 330,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    frame: false,
+    show: false,
+    alwaysOnTop: settings.alwaysOnTop,
+    title: `${APP_NAME} 설정`,
+    icon: iconPath(),
+    transparent: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: preloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+  settingsWindow.setContentProtection(true);
+  settingsWindow.setMenuBarVisibility(false);
+  settingsWindow.loadFile(path.join(__dirname, '..', 'public', 'settings.html'));
+  settingsWindow.once('ready-to-show', () => settingsWindow.show());
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+  });
+}
+
+function setupDisplayMediaHandler() {
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1, height: 1 },
+        fetchWindowIcons: false
+      });
+      let source = sources.find((item) => item.display_id === String(pendingCaptureDisplayId));
+      if (!source) source = sources[0];
+      if (!source) {
+        callback({});
+        return;
+      }
+      callback({ video: source, audio: false });
+    } catch {
+      callback({});
+    }
+  }, { useSystemPicker: false });
+}
+
+function setupIpc() {
+  ipcMain.handle('settings:get', () => ({ ...settings, customPaths: [...settings.customPaths] }));
+
+  ipcMain.handle('settings:set', (event, patch) => {
+    if (!patch || typeof patch !== 'object') return { ...settings };
+    if ('alwaysOnTop' in patch) settings.alwaysOnTop = !!patch.alwaysOnTop;
+    if ('freeze' in patch) settings.freeze = !!patch.freeze;
+    if ('aiDevice' in patch) settings.aiDevice = patch.aiDevice === 'gpu' ? 'gpu' : 'cpu';
+    if ('delay' in patch) settings.delay = Math.max(0, Math.min(10, Math.round(Number(patch.delay) || 0)));
+    if ('method' in patch && METHOD_IDS.includes(patch.method)) settings.method = patch.method;
+    if ('panelCount' in patch) settings.panelCount = Math.max(1, Math.min(3, Math.round(Number(patch.panelCount) || 1)));
+    if ('theme' in patch && (patch.theme === 'dark' || patch.theme === 'light')) settings.theme = patch.theme;
+    if ('shape' in patch && SHAPES.includes(patch.shape)) settings.shape = patch.shape;
+    if ('lastSaveDir' in patch && typeof patch.lastSaveDir === 'string') settings.lastSaveDir = patch.lastSaveDir;
+    if ('customPaths' in patch && Array.isArray(patch.customPaths)) settings.customPaths = patch.customPaths;
+    validateSettings();
+    saveSettings();
+    applyAlwaysOnTop();
+    const snapshot = { ...settings, customPaths: [...settings.customPaths] };
+    broadcast('settings:changed', snapshot);
+    return snapshot;
+  });
+
+  ipcMain.on('settings:toggleWindow', toggleSettingsWindow);
+
+  ipcMain.on('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.minimize();
+  });
+
+  ipcMain.on('window:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.isMaximized() ? win.unmaximize() : win.maximize();
+  });
+
+  ipcMain.on('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.close();
+  });
+
+  ipcMain.handle('selection:start', async (event, payload) => {
+    const shape = payload && SHAPES.includes(payload.shape) ? payload.shape : 'rect';
+    return startSelection(shape);
+  });
+
+  ipcMain.on('selection:cancel', () => {
+    if (selection.active) cancelSelection(true, 'cancelled');
+  });
+
+  ipcMain.on('selection:done', () => {
+    if (resultWindow && !resultWindow.isDestroyed()) resultWindow.focus();
+  });
+
+  ipcMain.on('overlay:select', (event, payload) => {
+    handleOverlaySelect(event, payload);
+  });
+
+  ipcMain.on('overlay:cancel', () => {
+    if (selection.active) cancelSelection(true, 'cancelled');
+  });
+
+  ipcMain.handle('fs:presets', () => buildPresets());
+
+  ipcMain.handle('fs:listDir', async (event, payload) => {
+    const target = payload && payload.dir ? payload.dir : app.getPath('pictures');
+    try {
+      const dir = path.resolve(target);
+      const stat = await fs.promises.stat(dir);
+      if (!stat.isDirectory()) return { ok: false, error: '폴더가 아닙니다.' };
+      const dirents = await fs.promises.readdir(dir, { withFileTypes: true });
+      const entries = dirents
+        .filter((entry) => !entry.name.startsWith('.'))
+        .map((entry) => ({
+          name: entry.name,
+          path: path.join(dir, entry.name),
+          type: entry.isDirectory() ? 'dir' : 'file'
+        }))
+        .sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+          return a.name.localeCompare(b.name, 'ko', { numeric: true, sensitivity: 'base' });
+        })
+        .slice(0, 601);
+      const parent = path.dirname(dir);
+      return {
+        ok: true,
+        dir,
+        parent: parent === dir ? null : parent,
+        entries
+      };
+    } catch (error) {
+      return { ok: false, error: error.message || '폴더를 읽을 수 없습니다.' };
+    }
+  });
+
+  ipcMain.handle('fs:mkdir', async (event, payload) => {
+    try {
+      const dir = payload && payload.dir;
+      const name = payload && String(payload.name || '').trim();
+      if (!dir || !name) return { ok: false, error: '폴더 이름을 입력하세요.' };
+      if (/[\\/:*?"<>|]/.test(name)) return { ok: false, error: '사용할 수 없는 문자가 있습니다.' };
+      const target = path.join(dir, name);
+      await fs.promises.mkdir(target, { recursive: false });
+      return { ok: true, path: target };
+    } catch (error) {
+      return { ok: false, error: error.message || '폴더를 만들 수 없습니다.' };
+    }
+  });
+
+  ipcMain.handle('fs:savePng', async (event, payload) => {
+    try {
+      if (!payload || !payload.dir) return { ok: false, error: '저장 폴더가 없습니다.' };
+      let name = String(payload.name || '').trim();
+      if (!name) return { ok: false, error: '파일 이름을 입력하세요.' };
+      name = name.replace(/[\\/:*?"<>|]/g, '_').replace(/\.png$/i, '').replace(/[. ]+$/, '');
+      if (!name) return { ok: false, error: '사용할 수 없는 파일 이름입니다.' };
+      const dir = path.resolve(payload.dir);
+      const stat = await fs.promises.stat(dir);
+      if (!stat.isDirectory()) return { ok: false, error: '저장 폴더가 아닙니다.' };
+      const buffer = Buffer.from(new Uint8Array(payload.buffer));
+      const base = path.join(dir, name);
+      let target = `${base}.png`;
+      let index = 1;
+      while (fs.existsSync(target)) {
+        target = `${base} (${index}).png`;
+        index += 1;
+      }
+      await fs.promises.writeFile(target, buffer);
+      settings.lastSaveDir = dir;
+      saveSettings();
+      broadcast('settings:changed', { ...settings, customPaths: [...settings.customPaths] });
+      return { ok: true, path: target };
+    } catch (error) {
+      return { ok: false, error: error.message || '파일을 저장할 수 없습니다.' };
+    }
+  });
+
+  ipcMain.handle('shell:reveal', (event, target) => {
+    try {
+      if (target && fs.existsSync(target)) {
+        shell.showItemInFolder(target);
+        return { ok: true };
+      }
+      if (target && fs.existsSync(path.dirname(target))) {
+        shell.openPath(path.dirname(target));
+        return { ok: true };
+      }
+      return { ok: false };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('ai:info', (event, payload) => {
+    const key = payload && AI_MODELS[payload.model] ? payload.model : 'realesrgan';
+    const item = AI_MODELS[key];
+    let size = 0;
+    try {
+      size = fs.statSync(path.join(aiModelDir(), item.file)).size;
+    } catch {
+      // Model file missing: report size 0.
+    }
+    return { name: item.name, file: item.file, size };
+  });
+
+  ipcMain.handle('ai:ensure', async (event, payload) => {
+    try {
+      ensureAIWorker();
+      const id = ++aiSeq;
+      return await sendToAI({
+        type: 'init',
+        id,
+        model: (payload && payload.model) || 'realesrgan',
+        device: settings.aiDevice
+      }, 90000);
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('ai:infer', async (event, payload) => {
+    try {
+      ensureAIWorker();
+      if (!payload || !payload.width || !payload.height) throw new Error('AI 입력이 올바르지 않습니다.');
+      const id = ++aiSeq;
+      const data = payload.data instanceof ArrayBuffer ? payload.data : payload.data && payload.data.buffer;
+      if (!(data instanceof ArrayBuffer)) throw new Error('AI 입력 데이터가 올바르지 않습니다.');
+      const message = {
+        type: 'infer',
+        id,
+        width: payload.width,
+        height: payload.height,
+        data,
+        model: payload.model || 'realesrgan',
+        device: settings.aiDevice
+      };
+      return await sendToAI(message, 60000, [data]);
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+}
+
+function buildPresets() {
+  const presets = [
+    { id: 'desktop', label: '바탕화면', path: app.getPath('desktop') },
+    { id: 'documents', label: '문서', path: app.getPath('documents') },
+    { id: 'downloads', label: '다운로드', path: app.getPath('downloads') },
+    { id: 'pictures', label: '사진', path: app.getPath('pictures') },
+    { id: 'home', label: '사용자 폴더', path: app.getPath('home') },
+    {
+      id: 'app',
+      label: '앱 폴더',
+      path: app.isPackaged ? path.dirname(app.getPath('exe')) : path.join(__dirname, '..')
+    }
+  ];
+  for (const item of settings.customPaths) {
+    presets.push({ id: `custom:${item.path}`, label: item.label, path: item.path, custom: true });
+  }
+  return presets;
+}
+
+function serializeDisplay(display) {
+  return {
+    id: String(display.id),
+    label: display.label || '',
+    bounds: { ...display.bounds },
+    workArea: { ...display.workArea },
+    size: { ...display.size },
+    scaleFactor: display.scaleFactor
+  };
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function cancellableWait(ms) {
+  return new Promise((resolve) => {
+    selection.waitResolve = resolve;
+    selection.waitTimer = setTimeout(() => {
+      selection.waitTimer = null;
+      selection.waitResolve = null;
+      resolve();
+    }, ms);
+  });
+}
+
+function sendMain(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
+
+async function startSelection(shape) {
+  if (selection.active) cancelSelection(false, 'cancelled');
+  if (resultWindow && !resultWindow.isDestroyed()) {
+    resultWindow.destroy();
+    resultWindow = null;
+  }
+  pendingCaptureDisplayId = null;
+  selection.active = true;
+  selection.shape = shape;
+
+  const delay = settings.delay;
+  sendMain('selection:starting', { delay, shape });
+
+  for (let remaining = delay; remaining > 0; remaining -= 1) {
+    sendMain('selection:countdown', { remaining });
+    await cancellableWait(1000);
+    if (!selection.active) return { ok: false, cancelled: true };
+  }
+
+  if (delay === 0) sendMain('selection:countdown', { remaining: 0 });
+
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  settingsWasOpen = !!(settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isVisible());
+  if (settingsWasOpen) settingsWindow.hide();
+  await wait(140);
+  if (!selection.active) {
+    showMainWindow();
+    return { ok: false, cancelled: true };
+  }
+
+  let freezeMap = {};
+  if (settings.freeze) {
+    freezeMap = await captureFreezeMap();
+  }
+  if (!selection.active) {
+    showMainWindow();
+    return { ok: false, cancelled: true };
+  }
+
+  await createOverlays(freezeMap);
+  return { ok: true };
+}
+
+function showMainWindow() {
+  if (settingsWasOpen && settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.show();
+  settingsWasOpen = false;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+function cancelSelection(showMain, reason) {
+  if (selection.waitTimer) {
+    clearTimeout(selection.waitTimer);
+    selection.waitTimer = null;
+  }
+  if (selection.waitResolve) {
+    const resolve = selection.waitResolve;
+    selection.waitResolve = null;
+    resolve();
+  }
+  const wasActive = selection.active;
+  selection.active = false;
+  closeOverlays();
+  if (showMain) showMainWindow();
+  if (wasActive) sendMain('selection:done', { reason: reason || 'cancelled' });
+}
+
+async function captureFreezeMap() {
+  const map = {};
+  const displays = screen.getAllDisplays();
+  const sizeOf = (display) => ({
+    width: Math.max(1, Math.round(display.size.width * display.scaleFactor)),
+    height: Math.max(1, Math.round(display.size.height * display.scaleFactor))
+  });
+  try {
+    // One call for every screen, at the largest display size; each thumbnail is resized to its own display below.
+    const sizes = displays.map(sizeOf);
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.max(...sizes.map((item) => item.width)), height: Math.max(...sizes.map((item) => item.height)) },
+      fetchWindowIcons: false
+    });
+    displays.forEach((display, index) => {
+      const source = sources.find((item) => item.display_id === String(display.id));
+      if (!source || source.thumbnail.isEmpty()) return;
+      const { width, height } = sizes[index];
+      let image = source.thumbnail;
+      const size = image.getSize();
+      if (size.width !== width || size.height !== height) {
+        image = image.resize({ width, height, quality: 'best' });
+      }
+      map[String(display.id)] = `data:image/jpeg;base64,${image.toJPEG(92).toString('base64')}`;
+    });
+  } catch (error) {
+    console.error('Freeze capture failed:', error);
+  }
+  return map;
+}
+
+function closeOverlays() {
+  const windows = overlayWindows.map((item) => item.win);
+  overlayWindows = [];
+  for (const win of windows) {
+    if (!win.isDestroyed()) {
+      try {
+        win.destroy();
+      } catch {
+        // Ignore.
+      }
+    }
+  }
+}
+
+async function createOverlays(freezeMap) {
+  const displays = screen.getAllDisplays();
+  const cursor = screen.getCursorScreenPoint();
+  overlayWindows = [];
+
+  const readyList = displays.map((display) => {
+    const win = new BrowserWindow({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      show: false,
+      alwaysOnTop: true,
+      focusable: true,
+      backgroundColor: '#00000000',
+      title: `${APP_NAME} 선택`,
+      icon: iconPath(),
+      webPreferences: {
+        preload: preloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+        sandbox: false
+      }
+    });
+
+    win.setAlwaysOnTop(true, 'screen-saver');
+    win.setContentProtection(true);
+    win.setMenuBarVisibility(false);
+
+    const entry = { win, display };
+    overlayWindows.push(entry);
+
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape') {
+        event.preventDefault();
+        cancelSelection(true, 'cancelled');
+      }
+    });
+
+    const ready = new Promise((resolve) => {
+      win.webContents.once('did-finish-load', () => resolve(true));
+      setTimeout(() => resolve(false), 3000);
+    });
+
+    win.loadFile(path.join(__dirname, '..', 'public', 'overlay.html'));
+
+    ready.then(() => {
+      if (win.isDestroyed()) return;
+      win.webContents.send('overlay:init', {
+        displayId: String(display.id),
+        bounds: display.bounds,
+        size: display.size,
+        workArea: display.workArea,
+        scaleFactor: display.scaleFactor,
+        shape: selection.shape,
+        freeze: freezeMap[String(display.id)] || null
+      });
+      win.showInactive();
+    });
+
+    return ready;
+  });
+
+  await Promise.all(readyList);
+
+  const target = overlayWindows.find((item) => {
+    const bounds = item.display.bounds;
+    return cursor.x >= bounds.x && cursor.x < bounds.x + bounds.width &&
+      cursor.y >= bounds.y && cursor.y < bounds.y + bounds.height;
+  }) || overlayWindows[0];
+
+  if (target && !target.win.isDestroyed() && selection.active) {
+    target.win.show();
+    target.win.focus();
+    target.win.webContents.focus();
+  }
+}
+
+function handleOverlaySelect(event, payload) {
+  if (!selection.active) return;
+  const entry = overlayWindows.find((item) => item.win.webContents.id === event.sender.id);
+  if (!entry) return;
+  if (!payload || !payload.rect) return;
+
+  const display = entry.display;
+  let rect = {
+    x: Number(payload.rect.x),
+    y: Number(payload.rect.y),
+    w: Number(payload.rect.w),
+    h: Number(payload.rect.h)
+  };
+  if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)) return;
+
+  let polygon = null;
+  if (selection.shape === 'free') {
+    const points = Array.isArray(payload.polygon) ? payload.polygon : [];
+    const valid = points
+      .map((point) => ({ x: Number(point.x), y: Number(point.y) }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    if (valid.length < 3) return;
+    const xs = valid.map((point) => point.x);
+    const ys = valid.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+    rect = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    if (rect.w < 4 || rect.h < 4) return;
+    polygon = valid.map((point) => ({
+      x: Math.max(0, Math.min(1, (point.x - rect.x) / rect.w)),
+      y: Math.max(0, Math.min(1, (point.y - rect.y) / rect.h))
+    }));
+  }
+
+  rect.w = Math.min(rect.w, display.size.width - rect.x);
+  rect.h = Math.min(rect.h, display.size.height - rect.y);
+  if (rect.w < 4 || rect.h < 4) return;
+
+  const selectionPayload = {
+    shape: selection.shape,
+    rect,
+    polygon,
+    display: serializeDisplay(display)
+  };
+
+  selection.active = false;
+  closeOverlays();
+  showMainWindow();
+  sendMain('selection:done', { reason: 'selected' });
+  openResult(selectionPayload);
+}
+
+async function findScreenSource(displayId) {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1, height: 1 },
+      fetchWindowIcons: false
+    });
+    return sources.find((item) => item.display_id === String(displayId)) || sources[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function openResult(selectionPayload) {
+  if (resultWindow && !resultWindow.isDestroyed()) {
+    resultWindow.destroy();
+    resultWindow = null;
+  }
+
+  const display = selectionPayload.display;
+  const work = display.workArea;
+  const width = Math.max(480, Math.min(1040, work.width - 24));
+  const height = Math.max(360, Math.min(760, work.height - 24));
+  const rightX = selectionPayload.rect.x + selectionPayload.rect.w + 18 + display.bounds.x;
+  const leftX = selectionPayload.rect.x - width - 18 + display.bounds.x;
+  let x = rightX + width <= work.x + work.width ? rightX : leftX;
+  x = Math.max(work.x + 8, Math.min(x, work.x + work.width - width - 8));
+  let y = selectionPayload.rect.y + display.bounds.y - 8;
+  y = Math.max(work.y + 8, Math.min(y, work.y + work.height - height - 8));
+
+  pendingCaptureDisplayId = String(display.id);
+
+  resultWindow = new BrowserWindow({
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height),
+    minWidth: 480,
+    minHeight: 360,
+    frame: false,
+    show: false,
+    title: `${APP_NAME} 확대`,
+    icon: iconPath(),
+    backgroundColor: '#0b0c10',
+    alwaysOnTop: settings.alwaysOnTop,
+    webPreferences: {
+      preload: preloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+            sandbox: false
+    }
+  });
+
+  resultWindow.setContentProtection(true);
+  resultWindow.setMenuBarVisibility(false);
+  if (settings.alwaysOnTop) resultWindow.setAlwaysOnTop(true);
+
+  resultWindow.on('closed', () => {
+    resultWindow = null;
+    pendingCaptureDisplayId = null;
+  });
+
+  const source = await findScreenSource(display.id);
+  const target = resultWindow;
+  if (!target || target.isDestroyed()) return;
+
+  target.loadFile(path.join(__dirname, '..', 'public', 'result.html'));
+  target.webContents.once('did-finish-load', () => {
+    if (!target.isDestroyed()) {
+      target.webContents.send('result:init', {
+        selection: selectionPayload,
+        settings: { ...settings, customPaths: [...settings.customPaths] },
+        sourceId: source ? source.id : null
+      });
+    }
+  });
+  target.once('ready-to-show', () => {
+    if (!target.isDestroyed()) {
+      target.show();
+      target.focus();
+    }
+  });
+}
+
+const AI_MODELS = {
+  realesrgan: { name: 'Real-ESRGAN x4plus', file: 'realesrgan_x4plus.onnx' }
+};
+
+function aiModelDir() {
+  return app.isPackaged ? path.join(process.resourcesPath, 'models') : path.join(__dirname, '..', 'models');
+}
+
+function ensureAIWorker() {
+  if (aiWorker) return;
+  aiWorker = new Worker(path.join(__dirname, 'ai-worker.js'), {
+    workerData: { modelDir: aiModelDir(), files: Object.fromEntries(Object.entries(AI_MODELS).map(([key, item]) => [key, item.file])) }
+  });
+
+  aiWorker.on('message', (message) => {
+    if (!message || typeof message !== 'object') return;
+
+    if (message.type === 'provider') {
+      aiProvider = message.provider;
+      broadcast('ai:event', { type: 'provider', provider: aiProvider });
+      return;
+    }
+
+    if (message.id && aiPending.has(message.id)) {
+      const pending = aiPending.get(message.id);
+      aiPending.delete(message.id);
+      clearTimeout(pending.timer);
+      if (message.type === 'error') {
+        pending.reject(new Error(message.message || 'AI 처리에 실패했습니다.'));
+      } else {
+        pending.resolve(message);
+      }
+      return;
+    }
+
+    if (message.type === 'worker-error') {
+      broadcast('ai:event', { type: 'error', message: message.message || 'AI 오류' });
+    }
+  });
+
+  aiWorker.on('error', (error) => {
+    broadcast('ai:event', { type: 'error', message: error.message || 'AI 오류' });
+  });
+
+  aiWorker.on('exit', () => {
+    aiWorker = null;
+    aiProvider = null;
+    for (const pending of aiPending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('AI 워커가 종료되었습니다.'));
+    }
+    aiPending.clear();
+    broadcast('ai:event', { type: 'provider', provider: null });
+  });
+}
+
+function sendToAI(message, timeoutMs, transferList) {
+  return new Promise((resolve, reject) => {
+    if (!aiWorker) {
+      reject(new Error('AI 워커가 없습니다.'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (aiPending.has(message.id)) {
+        aiPending.delete(message.id);
+        reject(new Error('AI 응답 시간 초과'));
+      }
+    }, timeoutMs);
+    aiPending.set(message.id, { resolve, reject, timer });
+    try {
+      aiWorker.postMessage(message, transferList || []);
+    } catch (error) {
+      clearTimeout(timer);
+      aiPending.delete(message.id);
+      reject(error);
+    }
+  });
+}
+
+app.whenReady().then(() => {
+  loadSettings();
+  setupIpc();
+  setupDisplayMediaHandler();
+  createMainWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  });
+});
+
+app.on('before-quit', () => {
+  closeOverlays();
+  if (aiWorker) {
+    try {
+      aiWorker.terminate();
+    } catch {
+      // Ignore.
+    }
+    aiWorker = null;
+  }
+});
+
+app.on('window-all-closed', () => {
+  app.quit();
+});

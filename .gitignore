@@ -1,0 +1,8 @@
+node_modules
+release/
+*.log
+/store/
+/tools/
+/.playwright-mcp/
+# The Real-ESRGAN model (64 MB) ships in the release zip, not in git.
+/models/*.onnx
