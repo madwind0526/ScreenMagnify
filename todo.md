@@ -29,8 +29,6 @@
 - [ ] 배포용 종료 스크립트 (`stop.bat`은 개발용 `electron.exe`만 대상).
 
 ## 3. 정리할 것
-- [ ] `store/` 루트의 옛 파일 (`compare.png`, `main.png`, `select.png`, `settings.png`, `demo-picture.png`)과 `store/gen/demo-picture.png`: 삭제 명령이 막혀서 지우지 못했다 (git 제외 폴더라 저장소에는 영향 없음).
-- [ ] `release/ScreenMagnify-1.0.0.exe` (옛 포터블 exe, git 제외).
 - [ ] `tools/` (ncnn 실행 파일과 영상 등 51 MB, 앱이 쓰지 않음, git 제외).
 - [ ] `G:\Claude\Connection-Map`의 git 원격 주소는 새 이름으로 고쳤다 (`origin`의 이전 값은 확인하지 못했다).
 
