@@ -35,6 +35,7 @@ When launching Electron from the Claude shell, unset `ELECTRON_RUN_AS_NODE` firs
 | `public/js/cpu-scaler.js` | separable CPU resampling with a weight cache |
 | `public/js/methods.js` | method list; `gpuOnly` marks NIS; `applyDevice` rewrites the dropdown |
 | `public/js/overlay.js` | selection overlay (rectangle, ellipse, freehand, Shift = 1:1) |
+| `revision.md`, `progress.md`, `todo.md`, `codereview.md` | change history, status with how each item was checked, open items (Korean), latest review |
 | `scripts/` | `zip-release.mjs`, `capture-docs.cjs` + `demo-scene.js` (real windows on a fake desktop), `store-mockup.py`, `check.cjs` |
 
 ## Key decisions

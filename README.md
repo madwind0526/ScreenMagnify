@@ -74,6 +74,9 @@ When launching Electron from a shell that runs under Claude Code or VS Code, uns
 | `public/js/cpu-scaler.js` | CPU resamplers (nearest, bilinear, bicubic, Lanczos3) |
 | `public/js/methods.js` | the list of methods |
 | `scripts/` | zip, screenshot and store-image scripts, syntax check |
+| `revision.md` | what changed in each version |
+| `progress.md` | what is done, and how it was checked |
+| `todo.md` | what is left |
 | `codereview.md` | the latest code review and what was done about it |
 
 ## Credits
