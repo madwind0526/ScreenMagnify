@@ -28,6 +28,12 @@
 
 ## P-04: 배포물
 
-**규칙:** 배포는 `npm run dist`(폴더형 zip, `asar:false`). `release/`, `store/`, `tools/`는 git에 넣지 않는다. 모델(`models/realesrgan_x4plus.onnx`, 64 MB)은 git에 포함하고 릴리스 zip에도 포함된다.
+**규칙:** 배포는 `npm run dist`(폴더형 zip, `asar:false`). `release/`, `store/`, `tools/`는 git에 넣지 않는다. AI 모델(`models/*.onnx`: general-x4v3 4.9 MB, NomosUni SPAN 1.6 MB, x4plus 64 MB)은 git에 포함하고 릴리스 zip에도 포함된다.
 **이유:** 저장소만 받아도 AI가 동작하도록(사용자 결정). 100 MB 제한 이내이므로 LFS 불필요, 더 큰 모델을 추가하면 LFS 검토.
 **적용 시점:** 릴리스 시.
+
+## P-05: AI 모델 선택
+
+**규칙:** 기본 AI는 `realesr-general-x4v3`(id `realesrgan`). `4xNomosUni SPAN`은 가장 작고 빠른 모델, `x4plus`는 목록에 남기되 "그림 위주, 글씨 깨짐, CPU 느림". 새 모델은 x4 ONNX(`input` 1x3xHxW, 0..1)만 `AI_MODELS`에 추가하면 워커가 그대로 쓴다.
+**이유:** 글씨와 그림을 모두 잘 확대해야 하고(사용자 판단: x4plus는 글씨가 깨지고 느림), 회사에서 쓰던 모델이 general-x4v3. OmniSR 4x DF2K는 검토 후 제외(글씨가 가늘어지고 그래프선이 끊김, DirectML 실행 실패).
+**적용 시점:** AI 모델을 추가/교체할 때. 라이선스(NC 모델 제외, CC-BY는 README 크레딧)를 확인.

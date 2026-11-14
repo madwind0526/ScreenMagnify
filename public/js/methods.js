@@ -39,12 +39,30 @@
     },
     {
       id: 'realesrgan',
-      label: 'Real-ESRGAN x4plus',
+      label: 'Real-ESRGAN general-x4v3',
       group: 'AI',
       gl: null,
       ai: true,
       model: 'realesrgan',
-      desc: 'AI 초해상도입니다. GPU에서는 빠르고, CPU에서는 한 번에 수 초가 걸립니다.'
+      desc: '글씨와 그림에 모두 좋은 AI 초해상도입니다. CPU에서도 빠릅니다.'
+    },
+    {
+      id: 'nomos-span',
+      label: '4xNomosUni SPAN',
+      group: 'AI',
+      gl: null,
+      ai: true,
+      model: 'nomos-span',
+      desc: '아주 작고 빠른 AI 초해상도입니다.'
+    },
+    {
+      id: 'realesrgan-x4plus',
+      label: 'Real-ESRGAN x4plus',
+      group: 'AI',
+      gl: null,
+      ai: true,
+      model: 'realesrgan-x4plus',
+      desc: '그림에 좋은 고화질 AI입니다. 글씨는 깨질 수 있고 CPU에서는 느립니다.'
     }
   ];
 

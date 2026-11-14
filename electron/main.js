@@ -10,7 +10,9 @@ const METHOD_IDS = [
   'bicubic-catmull',
   'lanczos3',
   'nis',
-  'realesrgan'
+  'realesrgan',
+  'nomos-span',
+  'realesrgan-x4plus'
 ];
 const SHAPES = ['rect', 'ellipse', 'free'];
 const DEFAULT_SETTINGS = {
@@ -839,7 +841,9 @@ async function openResult(selectionPayload) {
 }
 
 const AI_MODELS = {
-  realesrgan: { name: 'Real-ESRGAN x4plus', file: 'realesrgan_x4plus.onnx' }
+  realesrgan: { name: 'Real-ESRGAN general-x4v3', file: 'realesr-general-x4v3.onnx' },
+  'nomos-span': { name: '4xNomosUni SPAN', file: '4xNomosUni_span_multijpg_fp32_opset17.onnx' },
+  'realesrgan-x4plus': { name: 'Real-ESRGAN x4plus', file: 'realesrgan_x4plus.onnx' }
 };
 
 function aiModelDir() {

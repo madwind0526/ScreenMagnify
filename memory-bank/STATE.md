@@ -18,4 +18,5 @@
 
 - 릴리스: GitHub `madwind0526/ScreenMagnify` v1.0.0 (`ScreenMagnify-1.0.0.zip`, 폴더형, 서명 없음)
 - 모델 파일(`models/realesrgan_x4plus.onnx`, 64 MB)은 git과 릴리스 zip 모두에 포함
+- 2026-11-14: 기본 AI를 general-x4v3(4.9 MB)로 교체, NomosUni SPAN(1.6 MB) 추가, x4plus는 목록에 유지. 미배포(다음 릴리스 v1.1.0 후보).
 - 보류된 리뷰 항목: WebGL 컨텍스트/텍스처 공유, NIS 1x 우회, overlay dim 구조 변경, fs API 최소화/CSP

@@ -78,3 +78,25 @@ asar 안에서 `onnxruntime-node`와 worker 스크립트 로딩 위험.
 
 ### 해결
 `"asar": false`, `files`에서 darwin/linux/win32-arm64 바이너리를 제외, 모델은 `extraResources`로 `resources/models`에 복사하고 `process.resourcesPath`에서 읽는다. 패키지된 exe를 `ELECTRON_RUN_AS_NODE=1`로 실행해 worker 추론을 검증.
+
+## OmniSR ONNX가 DirectML에서 실패
+
+### 증상
+pth를 spandrel + torch로 ONNX 변환(`torch.onnx.export`, opset 17, 동적 H/W)한 OmniSR 4x DF2K가 CPU에서는 동작하지만 DirectML에서 `FusedMatMul ... 80070057`으로 실패.
+
+### 원인
+OmniSR의 attention MatMul 패턴이 DML 확장 연산(FusedMatMul)에서 지원되지 않는 입력 형태를 만든다. 또한 spandrel의 패딩 분기가 트레이싱 시 상수로 고정되어, 입력은 8의 배수여야 안전하다.
+
+### 해결
+OmniSR은 앱에 채택하지 않았다(품질도 글씨에는 부적합). 새 모델은 CPU와 DML을 모두 돌려 보고 채택한다. 변환이 필요하면 별도 venv(`python -m venv` + CPU torch + spandrel + onnx)에서 하고 시스템 파이썬은 건드리지 않는다.
+
+## 모델 벤치마크 시간이 들쭉날쭉함
+
+### 증상
+같은 모델의 CPU 시간이 실행마다 4~5배 차이(x4plus 256px: 3.6초 vs 13.5초).
+
+### 원인
+다른 프로세스가 CPU를 쓰는 동안 측정하면 크게 왜곡된다.
+
+### 해결
+같은 실행 안에서 모델끼리 상대 비교하고, 이상하면 몇 초 쉬었다 다시 측정한다.

@@ -46,6 +46,7 @@
   let aiBusy = false;
   let aiPendingPanel = -1;
   let lastAiAt = 0;
+  let lastAiMs = 0; // duration of the last inference: the next one waits at least that long
   let aiInferErrorShown = false;
   let aiTimer = null;
 
@@ -258,7 +259,7 @@
       text = `${info.label} · ${useGpu() ? 'GPU (WebGL2)' : 'CPU'}`;
     } else {
       const aiModel = aiModels[SM.modelOf(panel.method)];
-      const size = aiModel && aiModel.size ? ` · ${(aiModel.size / 1048576).toFixed(0)} MB` : '';
+      const size = aiModel && aiModel.size ? ` · ${(aiModel.size / 1048576).toFixed(aiModel.size < 10485760 ? 1 : 0)} MB` : '';
       let run = 'CPU 사용';
       if (aiError) run = '오류';
       else if (aiReady) run = aiProvider === 'cpu' ? (settings && settings.aiDevice === 'gpu' ? 'CPU 사용 (GPU 불가)' : 'CPU 사용') : 'GPU 사용 (DirectML)';
@@ -862,7 +863,7 @@
     }
 
     const now = Date.now();
-    const interval = aiProvider === 'cpu' ? 3000 : 250;
+    const interval = Math.max(250, lastAiMs);
     if (now - lastAiAt < interval) return;
 
     const view = getView();
@@ -879,6 +880,7 @@
 
     try {
       const input = captureAICrop(requestView);
+      const startedAt = Date.now();
       const result = await window.api.ai.infer({
         width: input.width,
         height: input.height,
@@ -888,6 +890,7 @@
       if (!result || result.ok === false) {
         throw new Error((result && result.error) || 'AI 처리에 실패했습니다.');
       }
+      lastAiMs = Date.now() - startedAt;
       if (version !== viewVersion || !panels[panel.index] || !SM.isAI(panels[panel.index].method)) {
         return;
       }

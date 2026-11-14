@@ -20,5 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The Real-ESRGAN model file shipped in the release zip is a separate work under
-its own license (BSD-3-Clause, https://github.com/xinntao/Real-ESRGAN).
+The AI model files shipped in the release zip are separate works under their own
+licenses: Real-ESRGAN (BSD-3-Clause, https://github.com/xinntao/Real-ESRGAN) and
+4xNomosUni_span_multijpg by Philip Hofmann (CC-BY-4.0, https://github.com/Phhofm/models).
