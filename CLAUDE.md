@@ -40,7 +40,8 @@ When launching Electron from the Claude shell, unset `ELECTRON_RUN_AS_NODE` firs
 ## Key decisions
 
 - **One device switch.** `aiDevice` ('cpu' default, 'gpu') controls both the AI session and the filter path: GPU uses WebGL/DirectML, CPU uses the JS resampler and the CPU ONNX provider. It switches live (no restart). NIS is GPU-only (disabled on CPU; a saved NIS falls back to Lanczos3).
-- **A still picture, cropped.** The result captures one frame, then stops the stream and keeps only the selection (shape baked in as transparency). Zoom below x1 shrinks the picture; the aspect ratio is always the selection's.
+- **A still picture, cropped.** The result captures one frame, then stops the stream and keeps only the selection (shape baked in as transparency). Zoom below the fit size shrinks the picture; the aspect ratio is always the selection's.
+- **Magnification.** `zoom` in `result.js` is relative (1 = the selection fills the panel). The shown number is `magnification() = zoom * fitFactor()` (displayed physical px per original screen px); wheel, buttons and keys step in magnification (0.5 grid, max 64) and divide by `fitFactor()` to get `zoom`. `fitFactor` changes when the window is resized, so `resizePanel` refreshes the label.
 - **Redraw only on change.** `render()` keeps a key per panel; the AI runs once per view, not continuously, and waits at least as long as the last inference took (`lastAiMs`).
 - **Save = active panel.** Transparent outside the shape and outside the picture.
 

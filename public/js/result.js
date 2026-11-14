@@ -115,8 +115,21 @@
     return `x${value.toFixed(1)}`;
   }
 
+  // `zoom` is relative to the selection filling the panel (1 = fit). The shown magnification is what the user
+  // sees: displayed physical pixels per original screen pixel = fit factor x zoom.
+  function fitFactor() {
+    const panel = panels[active] || panels[0];
+    if (!panel || !base.w) return 1;
+    const content = contentRectCss(panel);
+    return content.w > 0 ? (content.w * (window.devicePixelRatio || 1)) / base.w : 1;
+  }
+
+  function magnification() {
+    return zoom * fitFactor();
+  }
+
   function updateZoomUI() {
-    const text = formatZoom(zoom);
+    const text = formatZoom(magnification());
     zoomValue.textContent = text;
     hud.textContent = text;
   }
@@ -226,9 +239,10 @@
     return clampZoom(value + dir * step);
   }
 
+  // `value` is a magnification (x0.5 to x64); the internal zoom is that divided by the fit factor.
   function setZoom(value) {
-    const next = clampZoom(value);
-    if (next === zoom) return;
+    const next = clampZoom(value) / fitFactor();
+    if (Math.abs(next - zoom) < 1e-9) return;
     zoom = next;
     getView();
     markViewChanged();
@@ -346,6 +360,7 @@
       panel.canvas.width = backingW;
       panel.canvas.height = backingH;
     }
+    updateZoomUI();
   }
 
   function createPanelElement(index, method) {
@@ -498,8 +513,8 @@
     lastWheelAt = now;
 
     const direction = event.deltaY < 0 ? 1 : -1;
-    const next = nextZoom(zoom, direction);
-    if (next === zoom) return;
+    const next = nextZoom(magnification(), direction) / fitFactor();
+    if (Math.abs(next - zoom) < 1e-9) return;
 
     const rect = panel.canvas.getBoundingClientRect();
     const content = contentRectCss(panel);
@@ -1197,8 +1212,8 @@
     });
 
     $('btn-save').addEventListener('click', openSaveDialog);
-    $('zoom-out').addEventListener('click', () => setZoom(nextZoom(zoom, -1)));
-    $('zoom-in').addEventListener('click', () => setZoom(nextZoom(zoom, 1)));
+    $('zoom-out').addEventListener('click', () => setZoom(nextZoom(magnification(), -1)));
+    $('zoom-in').addEventListener('click', () => setZoom(nextZoom(magnification(), 1)));
     $('zoom-reset').addEventListener('click', resetView);
     $('btn-retry').addEventListener('click', () => {
       hideError();
@@ -1295,10 +1310,10 @@
 
       if (event.key === '+' || event.key === '=') {
         event.preventDefault();
-        setZoom(nextZoom(zoom, 1));
+        setZoom(nextZoom(magnification(), 1));
       } else if (event.key === '-' || event.key === '_') {
         event.preventDefault();
-        setZoom(nextZoom(zoom, -1));
+        setZoom(nextZoom(magnification(), -1));
       } else if (event.key === '0') {
         event.preventDefault();
         resetView();

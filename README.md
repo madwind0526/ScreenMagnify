@@ -17,7 +17,7 @@ The app text is Korean. The screenshots show a fake desktop (a sky wallpaper and
 
 - **Three ways to select.** Rectangle, ellipse or freehand. Hold **Shift** while dragging a rectangle or an ellipse for a 1:1 shape. **Esc** cancels.
 - **A still picture.** The screen is captured once when the result opens, and only the selected region (and its shape) is kept. Nothing outside the selection can be reached by panning or zooming out.
-- **Zoom x0.5 to x64.** Mouse wheel zooms around the pointer, drag pans, double-click resets. Steps are 0.5 up to x4, then 1, 2, 4 and 8 as you go higher. Zooming out below x1 shrinks the picture inside the window; the original aspect ratio is always kept.
+- **Zoom x0.5 to x64.** The number is the real magnification: how many times larger than on your screen the picture is shown (the selection starts at whatever fills the window, for example x3.4). Mouse wheel zooms around the pointer, drag pans, double-click resets. Steps are 0.5 up to x4, then 1, 2, 4 and 8 as you go higher. Zooming out far enough shrinks the picture inside the window; the original aspect ratio is always kept.
 - **Up to three panels.** Show the same region with different methods next to each other; click a panel to make it the active one (the one that is saved, and the one the AI works on).
 - **Methods.** None (nearest neighbour), Bilinear, Bicubic (Catmull-Rom), Lanczos3, NIS (NVIDIA Image Scaling) and three AI models run through ONNX Runtime:
   - **Real-ESRGAN general-x4v3** (4.9 MB, the default): sharp text and pictures, fast even on the CPU.
