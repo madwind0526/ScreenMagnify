@@ -20,12 +20,13 @@ The app text is Korean. The screenshots show a fake desktop (a sky wallpaper and
 - **Zoom x0.5 to x64.** The number is the real magnification: how many times larger than on your screen the picture is shown (the selection starts at whatever fills the window, for example x3.4). Mouse wheel zooms around the pointer, drag pans, double-click resets. Steps are 0.5 up to x4, then 1, 2, 4 and 8 as you go higher. Zooming out far enough shrinks the picture inside the window; the original aspect ratio is always kept.
 - **Up to three panels.** Show the same region with different methods next to each other; click a panel to make it the active one (the one that is saved, and the one the AI works on).
 - **Methods.** None (nearest neighbour), Bilinear, Bicubic (Catmull-Rom), Lanczos3, NIS (NVIDIA Image Scaling) and three AI models run through ONNX Runtime:
-  - **Real-ESRGAN general-x4v3** (4.9 MB, the default): sharp text and pictures, fast even on the CPU.
   - **4xNomosUni SPAN** (1.6 MB): the smallest and fastest.
-  - **Real-ESRGAN x4plus** (64 MB): very good on pictures, but small text can break and it is slow on the CPU.
-- **CPU or GPU.** One switch in the settings (or the AI badge in the result window): on **GPU** the filters run as WebGL shaders and the AI uses DirectML; on **CPU** the filters are resampled in JavaScript and the AI runs on the CPU. NIS needs the GPU and is disabled on CPU.
+  - **Real-ESRGAN-x4v3** (4.9 MB, the default): sharp text and pictures, fast even on the CPU.
+  - **Real-ESRGAN x4plus** (64 MB): very good on pictures, but small text can break and it is slow on the CPU, so it can only be chosen on the **GPU**.
+- **CPU or GPU.** One switch in the settings (or the AI badge in the result window): on **GPU** the filters run as WebGL shaders and the AI uses DirectML; on **CPU** the filters are resampled in JavaScript and the AI runs on the CPU. NIS and x4plus need the GPU: they are disabled on CPU, and switching to CPU changes them to Lanczos3 and Real-ESRGAN-x4v3.
 - **Save as PNG.** The saved picture is exactly what the active panel shows; everything outside an ellipse or freehand shape (and outside the picture when zoomed out) is transparent.
-- **Settings in their own window.** Always on top, screen freeze while selecting, delay (0 to 10 s), default method, device, number of panels (1 to 3). Dark and light themes.
+- **The AI sees the picture at full resolution.** The region you look at is never shrunk before the model: up to 256 px it is one pass, bigger regions are cut into overlapping tiles (192 px plus 32 px of context) and stitched, and the x4 result is scaled to the window (smoothly when it shrinks). Until the result is ready the bilinear picture is shown. "AI max size" in the settings (the whole selection by default, automatic per model and device, or 256 to 1536 px) decides how large a region the AI is used on; a larger region is shown with the filter. Time grows with the area (Real-ESRGAN-x4v3 on the development PC's CPU: about 0.2 s for 256 px, 3 s for 640x400).
+- **Settings in their own window.** Always on top, screen freeze while selecting, delay (0 to 10 s), default method, device, AI max size, number of panels (1 to 3). Dark and light themes.
 
 <p align="center">
   <img src="docs/images/select.png" alt="Selecting an ellipse on a frozen screen" width="420">

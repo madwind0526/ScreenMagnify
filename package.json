@@ -1,6 +1,6 @@
 {
   "name": "screenmagnify",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Screen magnifier with multiple upscaling methods",
   "main": "electron/main.js",
   "scripts": {

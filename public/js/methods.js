@@ -31,20 +31,12 @@
     {
       id: 'nis',
       gpuOnly: true,
+      fallback: 'lanczos3',
       label: 'NIS',
       sub: '(NVIDIA Image Scaling)',
       group: '업스케일러',
       gl: 'nis',
       desc: '6탭 스케일링과 방향성 샤프닝입니다.'
-    },
-    {
-      id: 'realesrgan',
-      label: 'Real-ESRGAN general-x4v3',
-      group: 'AI',
-      gl: null,
-      ai: true,
-      model: 'realesrgan',
-      desc: '글씨와 그림에 모두 좋은 AI 초해상도입니다. CPU에서도 빠릅니다.'
     },
     {
       id: 'nomos-span',
@@ -56,7 +48,18 @@
       desc: '아주 작고 빠른 AI 초해상도입니다.'
     },
     {
+      id: 'realesrgan',
+      label: 'Real-ESRGAN-x4v3',
+      group: 'AI',
+      gl: null,
+      ai: true,
+      model: 'realesrgan',
+      desc: '글씨와 그림에 모두 좋은 AI 초해상도입니다. CPU에서도 빠릅니다.'
+    },
+    {
       id: 'realesrgan-x4plus',
+      gpuOnly: true, // far too slow on the CPU (about 4 s for 256 px)
+      fallback: 'realesrgan',
       label: 'Real-ESRGAN x4plus',
       group: 'AI',
       gl: null,
@@ -73,6 +76,21 @@
   function glFor(id) {
     const method = byId(id);
     return method.ai ? 'bilinear' : method.gl;
+  }
+
+  // Largest region (px per side) the AI runs on, from tile timings (a few seconds per view at most).
+  // Bigger regions are shown with the filter instead. The CPU numbers also apply to a GPU fallback.
+  const AI_LIMITS = {
+    'nomos-span': { cpu: 1024, gpu: 1280 },
+    realesrgan: { cpu: 640, gpu: 1280 },
+    'realesrgan-x4plus': { cpu: 256, gpu: 512 }
+  };
+
+  // `override` (settings, px) wins over the table when it is above 0.
+  function aiLimit(id, device, override) {
+    if (override > 0) return override;
+    const entry = AI_LIMITS[modelOf(id)] || { cpu: 256, gpu: 256 };
+    return device === 'gpu' ? entry.gpu : entry.cpu;
   }
 
   function isAI(id) {
@@ -127,6 +145,7 @@
     byId,
     glFor,
     isAI,
+    aiLimit,
     modelOf,
     fillSelect,
     applyDevice,

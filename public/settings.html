@@ -22,6 +22,9 @@
       <label class="field-row"><span>시간 지연 (초)</span><input type="number" id="set-delay" min="0" max="10" step="1"></label>
       <label class="field-row"><span>보간 방법</span><select id="set-method" class="select"></select></label>
       <label class="field-row"><span>연산 장치</span><select id="set-device" class="select small"><option value="cpu">CPU</option><option value="gpu">GPU</option></select></label>
+      <label class="field-row"><span>AI 최대 처리 크기</span>
+        <select id="set-aimax" class="select small" style="width: 96px"><option value="0">자동</option><option value="-1">선택영역</option><option value="256">256px</option><option value="512">512px</option><option value="768">768px</option><option value="1024">1024px</option><option value="1280">1280px</option><option value="1536">1536px</option></select>
+      </label>
       <label class="field-row"><span>multi 화면</span>
         <select id="set-panels" class="select small"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
       </label>

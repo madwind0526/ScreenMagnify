@@ -46,6 +46,7 @@
   let aiBusy = false;
   let aiPendingPanel = -1;
   let lastAiAt = 0;
+  let aiTooBig = false; // the visible region exceeds the AI input limit, so the AI is skipped
   let lastAiMs = 0; // duration of the last inference: the next one waits at least that long
   let aiInferErrorShown = false;
   let aiTimer = null;
@@ -263,6 +264,15 @@
 
   const aiModels = {};
 
+  // Input limit of the active panel's model on the device that really runs it.
+  function activeAiLimit() {
+    const gpu = settings && settings.aiDevice === 'gpu' && aiProvider !== 'cpu';
+    const max = settings && settings.aiMaxSize;
+    // -1: always process the whole selection (the captured picture is exactly the selection).
+    if (max === -1 && video) return Math.max(video.videoWidth, video.videoHeight);
+    return SM.aiLimit(panels[active] ? panels[active].method : settings.method, gpu ? 'gpu' : 'cpu', max);
+  }
+
   // Shows the active method's model name, size and whether it runs on GPU or CPU.
   function updateModelInfo() {
     const panel = panels[active];
@@ -331,13 +341,13 @@
         panel.statusText.textContent = 'AI 처리 중';
         return;
       }
-      panel.statusText.textContent = aiProvider === 'cpu' ? 'AI · CPU' : 'AI · GPU';
+      panel.statusText.textContent = aiTooBig ? `AI 대기 · 영역이 커서 Bilinear (${activeAiLimit()}px 이하에서 동작)` : (aiProvider === 'cpu' ? 'AI · CPU' : 'AI · GPU');
     });
   }
 
   function applyPanelMethod(panel, method) {
     let info = SM.byId(method);
-    if (info.gpuOnly && !useGpu()) info = SM.byId('lanczos3');
+    if (info.gpuOnly && !useGpu()) info = SM.byId(info.fallback || 'lanczos3');
     panel.method = info.id;
     panel.label.textContent = info.label;
     panel.head.title = info.desc || info.label;
@@ -601,7 +611,8 @@
         if (useAI) panel.upscaler.drawAI(viewRect);
         else panel.upscaler.drawCrop(crop, viewRect);
       } else if (useAI && panel.aiData) {
-        drawCpu(panel, panel.aiData, viewRect, 'bilinear');
+        // Shrinking the x4 result needs a wide kernel to stay clean; enlarging it keeps the soft bilinear look.
+        drawCpu(panel, panel.aiData, viewRect, viewRect.w < panel.aiData.w ? 'lanczos3' : 'bilinear');
       } else {
         drawCpu(panel, cropData(crop), viewRect, panel.method);
       }
@@ -852,7 +863,7 @@
   function captureAICrop(view) {
     const crop = prepareCrop(visibleOf(view));
     if (!crop) throw new Error('AI 입력 이미지를 만들 수 없습니다.');
-    const maxDim = 256;
+    const maxDim = activeAiLimit();
     const scale = Math.min(1, maxDim / Math.max(crop.width, crop.height));
     const width = Math.max(1, Math.round(crop.width * scale));
     const height = Math.max(1, Math.round(crop.height * scale));
@@ -877,6 +888,16 @@
       return;
     }
 
+    // The model input is capped per model and device (SM.aiLimit). A larger region would be shrunk first, which loses detail
+    // (worse than the plain picture at x1.0), so show the filter result instead.
+    const vis = visibleOf(getView());
+    const tooBig = Math.max(vis.w, vis.h) > activeAiLimit();
+    if (tooBig !== aiTooBig) {
+      aiTooBig = tooBig;
+      updateAIStatuses();
+    }
+    if (tooBig) return;
+
     const now = Date.now();
     const interval = Math.max(250, lastAiMs);
     if (now - lastAiAt < interval) return;
@@ -891,6 +912,8 @@
     aiPendingPanel = panel.index;
     const version = viewVersion;
     const requestView = { ...view };
+    // The model this request runs on; a result from a model that is no longer selected must not be shown.
+    const requestModel = SM.modelOf(panel.method);
     updateAIStatuses();
 
     try {
@@ -900,13 +923,13 @@
         width: input.width,
         height: input.height,
         data: input.data.buffer,
-        model: SM.modelOf(panel.method)
+        model: requestModel
       });
       if (!result || result.ok === false) {
         throw new Error((result && result.error) || 'AI 처리에 실패했습니다.');
       }
       lastAiMs = Date.now() - startedAt;
-      if (version !== viewVersion || !panels[panel.index] || !SM.isAI(panels[panel.index].method)) {
+      if (version !== viewVersion || !panels[panel.index] || SM.modelOf(panels[panel.index].method) !== requestModel) {
         return;
       }
       const target = panels[panel.index];
@@ -1337,7 +1360,9 @@
     window.api.onSettingsChanged((next) => {
       if (!next) return;
       const prevDevice = settings && settings.aiDevice;
+      const prevMax = settings && settings.aiMaxSize;
       settings = next;
+      if (prevMax !== next.aiMaxSize) markViewChanged(); // recompute with the new limit
       applyTheme(next.theme);
       SM.applyDevice(methodSelect, next.aiDevice);
       if (prevDevice !== next.aiDevice) {

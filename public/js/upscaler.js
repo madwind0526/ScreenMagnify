@@ -595,7 +595,10 @@ float weight(float x) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.aiTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-      this.setFilter(this.aiTexture, gl.LINEAR);
+      // The x4 output is usually shown smaller than 4x: mipmaps keep the shrink smooth (plain LINEAR skips pixels).
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       this.aiW = width;
       this.aiH = height;
     }
@@ -688,7 +691,6 @@ float weight(float x) {
       gl.useProgram(entry.program);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.aiTexture);
-      this.setFilter(this.aiTexture, gl.LINEAR);
       gl.uniform1i(entry.uniforms.uTex, 0);
       this.bindCommon(entry, this.aiW, this.aiH, viewRect);
       gl.bindVertexArray(null);

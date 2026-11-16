@@ -600,6 +600,9 @@ svg {
   letter-spacing: -1.4px;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 3px 18px rgba(0, 0, 0, 0.82);
+  /* Dark plate so the number stays readable on bright pictures. */
+  background: rgba(0, 0, 0, 0.62);
+  padding: 0 14px 2px;
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 220ms ease, transform 220ms ease;

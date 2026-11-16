@@ -6,6 +6,7 @@
     $('set-top').checked = !!next.alwaysOnTop;
     $('set-freeze').checked = !!next.freeze;
     if (document.activeElement !== $('set-delay')) $('set-delay').value = next.delay;
+    $('set-aimax').value = String(next.aiMaxSize);
     $('set-panels').value = String(next.panelCount);
     $('set-method').value = next.method;
     $('set-device').value = next.aiDevice;
@@ -24,6 +25,7 @@
     save({ delay: value });
   });
   $('set-method').addEventListener('change', (e) => save({ method: e.target.value }));
+  $('set-aimax').addEventListener('change', (e) => save({ aiMaxSize: Number(e.target.value) }));
   $('set-panels').addEventListener('change', (e) => save({ panelCount: Number(e.target.value) }));
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') window.api.window.close();

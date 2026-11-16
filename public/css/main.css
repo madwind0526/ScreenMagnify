@@ -17,7 +17,7 @@
   --danger: #f87171;
   --success: #4ade80;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-  --radius: 18px;
+  --radius: 0;
 }
 
 :root[data-theme="light"] {
@@ -118,7 +118,7 @@ svg {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: 0;
   color: #fff;
   background: linear-gradient(135deg, var(--accent), #4f46e5);
   box-shadow: 0 6px 16px rgba(124, 106, 247, 0.35);
@@ -145,7 +145,7 @@ svg {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--muted);
   transition: background 120ms ease, color 120ms ease;
 }
@@ -164,9 +164,9 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
   flex: 1 1 auto;
-  padding: 0 14px;
+  padding: 0 8px;
 }
 
 .sep {
@@ -182,7 +182,7 @@ svg {
   width: 44px;
   height: 44px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
   transition: background 120ms ease, color 120ms ease;
@@ -231,7 +231,7 @@ svg {
   inset: 0;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 0;
   background: rgba(40, 30, 140, 0.85);
   font-weight: 800;
   font-size: 18px;
@@ -262,7 +262,7 @@ svg {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 16px;
+  padding: 14px 16px 22px;
 }
 
 .check-row,
@@ -302,7 +302,7 @@ svg {
   height: 32px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--panel-soft);
   color: var(--text);
   outline: none;
@@ -319,6 +319,7 @@ svg {
 
 .select.small {
   width: 64px;
+  white-space: nowrap;
 }
 
 .field-row input:focus,
@@ -334,7 +335,7 @@ svg {
   max-width: min(520px, calc(100vw - 40px));
   padding: 11px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   color: var(--text);
   box-shadow: var(--shadow);
@@ -391,14 +392,14 @@ body.translucent .titlebar {
   position-try-fallbacks: flip-block;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--panel);
   color: var(--text);
 }
 
 .select option {
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: 0;
   font-size: 13px;
 }
 
@@ -423,7 +424,7 @@ body.round {
 
 body.round .app {
   border: 1px solid var(--border-strong);
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
   background:
     radial-gradient(900px 420px at 8% -8%, var(--bg-glow), transparent 62%),

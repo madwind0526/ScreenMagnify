@@ -14,6 +14,7 @@ const METHOD_IDS = [
   'nomos-span',
   'realesrgan-x4plus'
 ];
+const GPU_ONLY = { nis: 'lanczos3', 'realesrgan-x4plus': 'realesrgan' };
 const SHAPES = ['rect', 'ellipse', 'free'];
 const DEFAULT_SETTINGS = {
   alwaysOnTop: true,
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS = {
   aiDevice: 'cpu',
   method: 'realesrgan',
   panelCount: 1,
+  aiMaxSize: -1,
   theme: 'dark',
   shape: 'rect',
   lastSaveDir: '',
@@ -95,8 +97,11 @@ function validateSettings() {
   if (!METHOD_IDS.includes(settings.method)) settings.method = DEFAULT_SETTINGS.method;
   if (!SHAPES.includes(settings.shape)) settings.shape = 'rect';
   settings.panelCount = Math.max(1, Math.min(3, Math.round(Number(settings.panelCount) || 1)));
+  // 0 = automatic (per model and device), -1 = the whole selection; otherwise the largest region side in px.
+  settings.aiMaxSize = settings.aiMaxSize === -1 ? -1 : Math.max(0, Math.min(1536, Math.round(Number(settings.aiMaxSize) || 0)));
   // NIS is GPU-only.
-  if (settings.aiDevice !== 'gpu' && settings.method === 'nis') settings.method = 'lanczos3';
+  // GPU-only methods fall back on the CPU (keep in sync with `fallback` in public/js/methods.js).
+  if (settings.aiDevice !== 'gpu' && GPU_ONLY[settings.method]) settings.method = GPU_ONLY[settings.method];
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark';
   if (typeof settings.lastSaveDir !== 'string') settings.lastSaveDir = '';
   if (!Array.isArray(settings.customPaths)) settings.customPaths = [];
@@ -150,7 +155,7 @@ function iconPath() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 380,
+    width: 330,
     height: 132,
     useContentSize: true,
     resizable: false,
@@ -192,12 +197,12 @@ function toggleSettingsWindow() {
     settingsWindow.close();
     return;
   }
-  const bounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 100, y: 100, width: 380, height: 160 };
+  const bounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 100, y: 100, width: 330, height: 160 };
   settingsWindow = new BrowserWindow({
     x: bounds.x,
     y: bounds.y + bounds.height + 8,
-    width: 280,
-    height: 330,
+    width: 330,
+    height: 390,
     useContentSize: true,
     resizable: false,
     maximizable: false,
@@ -256,6 +261,7 @@ function setupIpc() {
     if ('aiDevice' in patch) settings.aiDevice = patch.aiDevice === 'gpu' ? 'gpu' : 'cpu';
     if ('delay' in patch) settings.delay = Math.max(0, Math.min(10, Math.round(Number(patch.delay) || 0)));
     if ('method' in patch && METHOD_IDS.includes(patch.method)) settings.method = patch.method;
+    if ('aiMaxSize' in patch) settings.aiMaxSize = Number(patch.aiMaxSize) || 0;
     if ('panelCount' in patch) settings.panelCount = Math.max(1, Math.min(3, Math.round(Number(patch.panelCount) || 1)));
     if ('theme' in patch && (patch.theme === 'dark' || patch.theme === 'light')) settings.theme = patch.theme;
     if ('shape' in patch && SHAPES.includes(patch.shape)) settings.shape = patch.shape;
@@ -841,7 +847,7 @@ async function openResult(selectionPayload) {
 }
 
 const AI_MODELS = {
-  realesrgan: { name: 'Real-ESRGAN general-x4v3', file: 'realesr-general-x4v3.onnx' },
+  realesrgan: { name: 'Real-ESRGAN-x4v3', file: 'realesr-general-x4v3.onnx' },
   'nomos-span': { name: '4xNomosUni SPAN', file: '4xNomosUni_span_multijpg_fp32_opset17.onnx' },
   'realesrgan-x4plus': { name: 'Real-ESRGAN x4plus', file: 'realesrgan_x4plus.onnx' }
 };

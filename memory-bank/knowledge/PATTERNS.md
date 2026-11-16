@@ -66,3 +66,18 @@ for (const track of media.getTracks()) track.stop();
 **사용 시점:** 개인 화면 없이 발표용 스크린샷을 만들 때.
 
 `app.setPath('userData', tmp)` 후 실제 `main.js`를 `require`, 결과 창에서 `navigator.mediaDevices.getDisplayMedia`를 canvas `captureStream()`으로 대체하고 PointerEvent/WheelEvent를 dispatch. 창을 `setZoomFactor(2)`로 키우면 선명한 캡처가 된다(`scripts/capture-docs.cjs`).
+
+## 원본 해상도 AI 추론: 타일 이어 붙이기 (`ai-worker.js`)
+
+**사용 시점:** 크기가 정해지지 않은 영역을 x4 ONNX 모델에 넣을 때 (입력을 줄이면 디테일이 사라진다).
+
+```js
+const TILE_MAX = 256, TILE_CORE = 192, TILE_PAD = 32;
+// <= 256 px: inferSingle (padded to a 64/128/192/256 bucket by edge replication).
+// Otherwise: for each 192 px core tile take 32 px of context on every side (clamped to the image), run inferSingle,
+// then copy only the core part of the x4 output into the result at (cx*4, cy*4).
+```
+
+## AI 결과 4배를 줄여 표시
+
+GPU: `gl.generateMipmap` + `TEXTURE_MIN_FILTER = LINEAR_MIPMAP_LINEAR` (`uploadAI`). CPU: `viewRect.w < ai.w`이면 `lanczos3`, 아니면 `bilinear`.
