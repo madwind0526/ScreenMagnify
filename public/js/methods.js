@@ -86,6 +86,10 @@
     'realesrgan-x4plus': { cpu: 256, gpu: 512 }
   };
 
+  // Largest AI input in pixels, whatever the per-side limit says: the x4 output is 16x that (2.5 M px -> about 150 MiB).
+  // Keep in sync with AI_MAX_INPUT_PIXELS in electron/main.js.
+  const AI_MAX_PIXELS = 2.5e6;
+
   // `override` (settings, px) wins over the table when it is above 0.
   function aiLimit(id, device, override) {
     if (override > 0) return override;
@@ -146,6 +150,7 @@
     glFor,
     isAI,
     aiLimit,
+    AI_MAX_PIXELS,
     modelOf,
     fillSelect,
     applyDevice,

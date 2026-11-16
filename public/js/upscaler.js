@@ -411,7 +411,28 @@ float weight(float x) {
         return;
       }
 
+      // A GPU reset or driver update loses every GL object: rebuild them when the browser restores the context.
+      this.lost = false;
+      this.onRestore = null; // set by the owner: it has to draw again and re-upload the AI frame
+      canvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        this.lost = true;
+      });
+      canvas.addEventListener('webglcontextrestored', () => {
+        this.initGL();
+        this.lost = false;
+        if (this.onRestore) this.onRestore();
+      });
+      this.initGL();
+    }
+
+    initGL() {
       const gl = this.gl;
+      this.programs = new Map();
+      this.texW = 0;
+      this.texH = 0;
+      this.aiW = 0;
+      this.aiH = 0;
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.BLEND);
       gl.disable(gl.CULL_FACE);
@@ -549,6 +570,7 @@ float weight(float x) {
       } catch (error) {
         console.error('Shader error:', key, error);
         entry = this.createProgram(PASS_SOURCE);
+        if (this.onShaderError) this.onShaderError(key);
       }
       this.programs.set(key, entry);
       return entry;

@@ -49,6 +49,8 @@ let aiWorker = null;
 let aiSeq = 0;
 let aiProvider = null;
 const aiPending = new Map();
+// Largest AI input in pixels (the x4 output is 16x that: 2.5 M px in -> about 150 MiB RGBA out). Keep in sync with SM.AI_MAX_PIXELS.
+const AI_MAX_INPUT_PIXELS = 2.6e6;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -198,9 +200,14 @@ function toggleSettingsWindow() {
     return;
   }
   const bounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 100, y: 100, width: 330, height: 160 };
+  // Below the main window; when that would leave the work area, open above it instead (and keep x on screen).
+  const work = screen.getDisplayMatching(bounds).workArea;
+  const below = bounds.y + bounds.height + 8;
+  const settingsY = below + 390 <= work.y + work.height ? below : Math.max(work.y, bounds.y - 390 - 8);
+  const settingsX = Math.max(work.x, Math.min(bounds.x, work.x + work.width - 330));
   settingsWindow = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y + bounds.height + 8,
+    x: settingsX,
+    y: settingsY,
     width: 330,
     height: 390,
     useContentSize: true,
@@ -367,6 +374,8 @@ function setupIpc() {
       if (!name) return { ok: false, error: '파일 이름을 입력하세요.' };
       name = name.replace(/[\\/:*?"<>|]/g, '_').replace(/\.png$/i, '').replace(/[. ]+$/, '');
       if (!name) return { ok: false, error: '사용할 수 없는 파일 이름입니다.' };
+      // Windows device names (CON, NUL, COM1...) cannot be files, with or without an extension.
+      if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name)) name = `${name}_`;
       const dir = path.resolve(payload.dir);
       const stat = await fs.promises.stat(dir);
       if (!stat.isDirectory()) return { ok: false, error: '저장 폴더가 아닙니다.' };
@@ -435,6 +444,8 @@ function setupIpc() {
     try {
       ensureAIWorker();
       if (!payload || !payload.width || !payload.height) throw new Error('AI 입력이 올바르지 않습니다.');
+      // The x4 output is 16x the input pixels (4 bytes each): keep it bounded whatever the window asks for.
+      if (payload.width * payload.height > AI_MAX_INPUT_PIXELS) throw new Error('AI 입력 영역이 너무 큽니다.');
       const id = ++aiSeq;
       const data = payload.data instanceof ArrayBuffer ? payload.data : payload.data && payload.data.buffer;
       if (!(data instanceof ArrayBuffer)) throw new Error('AI 입력 데이터가 올바르지 않습니다.');
@@ -914,6 +925,9 @@ function sendToAI(message, timeoutMs, transferList) {
       if (aiPending.has(message.id)) {
         aiPending.delete(message.id);
         reject(new Error('AI 응답 시간 초과'));
+        // The worker cannot cancel a running pass: restart it, or its queue would delay every later request.
+        // The exit handler tells the windows, which load the model again.
+        if (aiWorker) aiWorker.terminate();
       }
     }, timeoutMs);
     aiPending.set(message.id, { resolve, reject, timer });

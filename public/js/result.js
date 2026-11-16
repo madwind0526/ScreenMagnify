@@ -91,7 +91,15 @@
   // GPU: WebGL canvas (created lazily). CPU: separate 2D canvas drawn with JS resampling.
   function applyPanelDevice(panel) {
     const gpu = useGpu();
-    if (gpu && !panel.upscaler) panel.upscaler = new SM.Upscaler(panel.canvasGl);
+    if (gpu && !panel.upscaler) {
+      panel.upscaler = new SM.Upscaler(panel.canvasGl);
+      // After a GL context restore: the textures are empty, so upload the AI frame again and redraw.
+      panel.upscaler.onRestore = () => {
+        if (panel.aiData) panel.upscaler.uploadAI(panel.aiData.data, panel.aiData.w, panel.aiData.h);
+        panel.lastKey = null;
+      };
+      panel.upscaler.onShaderError = (key) => toast(`${key.toUpperCase()} 셰이더를 만들지 못해 단순 확대로 표시합니다.`, true);
+    }
     panel.canvas = gpu ? panel.canvasGl : panel.canvasCpu;
     panel.canvasGl.style.display = gpu ? 'block' : 'none';
     panel.canvasCpu.style.display = gpu ? 'none' : 'block';
@@ -341,7 +349,7 @@
         panel.statusText.textContent = 'AI 처리 중';
         return;
       }
-      panel.statusText.textContent = aiTooBig ? `AI 대기 · 영역이 커서 Bilinear (${activeAiLimit()}px 이하에서 동작)` : (aiProvider === 'cpu' ? 'AI · CPU' : 'AI · GPU');
+      panel.statusText.textContent = aiTooBig ? `AI 대기 · 영역이 커서 Bilinear (${Math.min(activeAiLimit(), Math.floor(Math.sqrt(SM.AI_MAX_PIXELS)))}px 이하에서 동작)` : (aiProvider === 'cpu' ? 'AI · CPU' : 'AI · GPU');
     });
   }
 
@@ -606,6 +614,8 @@
       // The image is a still, so redraw only when the view, size, method or AI frame changed.
       const key = `${view.x}|${view.y}|${view.w}|${view.h}|${viewRect.x}|${viewRect.y}|${viewRect.w}|${viewRect.h}|${panel.canvas.width}x${panel.canvas.height}|${panel.method}|${useAI}|${panel.aiStamp || 0}|${useGpu()}`;
       if (key === panel.lastKey) continue;
+      // A lost WebGL context draws nothing: wait, the restore handler clears lastKey.
+      if (useGpu() && panel.upscaler.lost) continue;
       panel.lastKey = key;
       if (useGpu()) {
         if (useAI) panel.upscaler.drawAI(viewRect);
@@ -852,6 +862,8 @@
         updateAIStatuses();
       })
       .catch((error) => {
+        // A newer request for another model owns the state now.
+        if (aiLoaded !== key) return;
         aiReady = false;
         aiLoaded = null; // lets a later retry (badge click) reload the model
         aiError = error.message || 'AI 모델을 불러오지 못했습니다.';
@@ -880,18 +892,20 @@
   }
 
   async function aiTick() {
-    if (!ready || aiBusy || !aiReady || aiError || !video || video.readyState < 2) return;
+    if (!ready || aiBusy || aiError || !video || video.readyState < 2) return;
     const panel = panels[active];
     if (!panel || !SM.isAI(panel.method)) return;
+    // Also when the worker exited (aiReady false, aiLoaded cleared): load the model again without a badge click.
     if (aiLoaded !== SM.modelOf(panel.method)) {
       ensureAI();
       return;
     }
+    if (!aiReady) return;
 
     // The model input is capped per model and device (SM.aiLimit). A larger region would be shrunk first, which loses detail
     // (worse than the plain picture at x1.0), so show the filter result instead.
     const vis = visibleOf(getView());
-    const tooBig = Math.max(vis.w, vis.h) > activeAiLimit();
+    const tooBig = Math.max(vis.w, vis.h) > activeAiLimit() || vis.w * vis.h > SM.AI_MAX_PIXELS;
     if (tooBig !== aiTooBig) {
       aiTooBig = tooBig;
       updateAIStatuses();
