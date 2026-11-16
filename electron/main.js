@@ -37,6 +37,7 @@ let settingsWindow = null;
 let settingsWasOpen = false;
 let overlayWindows = [];
 let pendingCaptureDisplayId = null;
+let freezeImages = {}; // display id -> screenshot (NativeImage) taken when the selection started
 
 const selection = {
   active: false,
@@ -547,6 +548,7 @@ async function startSelection(shape) {
   }
 
   let freezeMap = {};
+  freezeImages = {};
   if (settings.freeze) {
     freezeMap = await captureFreezeMap();
   }
@@ -580,14 +582,15 @@ function cancelSelection(showMain, reason) {
   }
   const wasActive = selection.active;
   selection.active = false;
+  freezeImages = {};
   closeOverlays();
   if (showMain) showMainWindow();
   if (wasActive) sendMain('selection:done', { reason: reason || 'cancelled' });
 }
 
-async function captureFreezeMap() {
+// Screenshots of the given displays, without the mouse cursor (a display stream always has the cursor in it).
+async function grabDisplays(displays) {
   const map = {};
-  const displays = screen.getAllDisplays();
   const sizeOf = (display) => ({
     width: Math.max(1, Math.round(display.size.width * display.scaleFactor)),
     height: Math.max(1, Math.round(display.size.height * display.scaleFactor))
@@ -609,11 +612,19 @@ async function captureFreezeMap() {
       if (size.width !== width || size.height !== height) {
         image = image.resize({ width, height, quality: 'best' });
       }
-      map[String(display.id)] = `data:image/jpeg;base64,${image.toJPEG(92).toString('base64')}`;
+      map[String(display.id)] = image;
     });
   } catch (error) {
     console.error('Freeze capture failed:', error);
   }
+  return map;
+}
+
+// The overlays show a JPEG; the full-quality screenshots stay here for the result window.
+async function captureFreezeMap() {
+  freezeImages = await grabDisplays(screen.getAllDisplays());
+  const map = {};
+  for (const [id, image] of Object.entries(freezeImages)) map[id] = `data:image/jpeg;base64,${image.toJPEG(92).toString('base64')}`;
   return map;
 }
 
@@ -835,6 +846,14 @@ async function openResult(selectionPayload) {
     pendingCaptureDisplayId = null;
   });
 
+  // The picture the result works on: the frozen screenshot, or a fresh one (after the overlays are gone) when Freeze is off.
+  let image = freezeImages[String(display.id)];
+  if (!image) {
+    await wait(120);
+    image = (await grabDisplays(screen.getAllDisplays().filter((item) => String(item.id) === String(display.id))))[String(display.id)];
+  }
+  freezeImages = {};
+  const still = image ? image.toPNG() : null;
   const source = await findScreenSource(display.id);
   const target = resultWindow;
   if (!target || target.isDestroyed()) return;
@@ -845,7 +864,8 @@ async function openResult(selectionPayload) {
       target.webContents.send('result:init', {
         selection: selectionPayload,
         settings: { ...settings, customPaths: [...settings.customPaths] },
-        sourceId: source ? source.id : null
+        sourceId: source ? source.id : null,
+        still
       });
     }
   });

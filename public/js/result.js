@@ -18,6 +18,7 @@
   let settings = null;
   let selection = null;
   let sourceId = null;
+  let stillBytes = null; // PNG of the whole display from the main process (no mouse cursor)
   let displaySize = null;
 
   let video = null;
@@ -703,6 +704,21 @@
     });
   }
 
+  // Decodes the screenshot; videoWidth/videoHeight let the crop code treat it like a video frame.
+  async function loadStill(bytes) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      image.videoWidth = image.naturalWidth;
+      image.videoHeight = image.naturalHeight;
+      return image;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   async function openStream() {
     if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
       try {
@@ -739,40 +755,44 @@
     updateZoomUI();
 
     try {
-      const media = await openStream();
-      if (!media) throw new Error('화면 스트림을 만들지 못했습니다.');
+      // A screenshot from the main process has no mouse cursor; a display stream always embeds the cursor.
+      const still = stillBytes ? await loadStill(stillBytes).catch(() => null) : null;
+      const media = still ? null : await openStream();
+      if (!still && !media) throw new Error('화면 스트림을 만들지 못했습니다.');
       stream = media;
       capturing = true;
 
-      const target = document.createElement('video');
-      target.muted = true;
-      target.autoplay = true;
-      target.playsInline = true;
-      target.style.position = 'fixed';
-      target.style.left = '-2px';
-      target.style.top = '-2px';
-      target.style.width = '1px';
-      target.style.height = '1px';
-      target.style.opacity = '0';
-      target.style.pointerEvents = 'none';
-      target.srcObject = media;
-      document.body.appendChild(target);
-      video = target;
+      const target = still || document.createElement('video');
+      if (!still) {
+        target.muted = true;
+        target.autoplay = true;
+        target.playsInline = true;
+        target.style.position = 'fixed';
+        target.style.left = '-2px';
+        target.style.top = '-2px';
+        target.style.width = '1px';
+        target.style.height = '1px';
+        target.style.opacity = '0';
+        target.style.pointerEvents = 'none';
+        target.srcObject = media;
+        document.body.appendChild(target);
+        video = target;
 
-      target.play().catch(() => {});
-      await waitForVideoReady(target);
-      if (!capturing) throw new Error('화면 캡처가 중단되었습니다.');
+        target.play().catch(() => {});
+        await waitForVideoReady(target);
+        if (!capturing) throw new Error('화면 캡처가 중단되었습니다.');
 
-      // Wait for a real frame, keep it as a still image, then stop the live capture.
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 1500);
-        if (target.requestVideoFrameCallback) {
-          target.requestVideoFrameCallback(() => {
-            clearTimeout(timer);
-            resolve();
-          });
-        }
-      });
+        // Wait for a real frame, keep it as a still image, then stop the live capture.
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 1500);
+          if (target.requestVideoFrameCallback) {
+            target.requestVideoFrameCallback(() => {
+              clearTimeout(timer);
+              resolve();
+            });
+          }
+        });
+      }
       // Keep only the selected region (and its shape) so nothing outside the selection is reachable.
       const disp = selection.display;
       displaySize = disp.size;
@@ -807,10 +827,12 @@
       snap.videoHeight = sh;
       snap.readyState = 4;
       snap.currentTime = 0;
-      for (const track of media.getTracks()) track.stop();
-      target.pause();
-      target.srcObject = null;
-      target.remove();
+      if (media) {
+        for (const track of media.getTracks()) track.stop();
+        target.pause();
+        target.srcObject = null;
+        target.remove();
+      }
       stream = null;
       video = snap;
 
@@ -1421,6 +1443,7 @@
     };
     selection = payload.selection;
     sourceId = payload.sourceId;
+    stillBytes = payload.still || null;
     displaySize = selection.display.size;
     applyTheme(settings.theme);
     SM.fillSelect(methodSelect, settings.method);

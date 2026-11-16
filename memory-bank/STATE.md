@@ -3,7 +3,7 @@
 ## Current Wave
 
 - **Wave:** 4
-- **Status:** Complete (v1.2.1 released)
+- **Status:** Complete (v1.2.2 released)
 - **Cache Status:** CLEAN
 - **Last Checkpoint:** 2026-11-16 AI 타일 처리/한도 설정/모델 전환 버그/UI 정리, README/CLAUDE.md/revision/progress/todo/memory-bank 갱신
 
@@ -18,7 +18,7 @@
 
 ## Session Notes
 
-- 릴리스: GitHub `madwind0526/ScreenMagnify` v1.0.0, v1.1.0, v1.2.0, v1.2.1 (`ScreenMagnify-<버전>.zip`, 폴더형, 서명 없음)
+- 릴리스: GitHub `madwind0526/ScreenMagnify` v1.0.0, v1.1.0, v1.2.0, v1.2.1, v1.2.2 (`ScreenMagnify-<버전>.zip`, 폴더형, 서명 없음)
 - 모델 파일(`models/*.onnx`: general-x4v3, NomosUni SPAN, x4plus)은 git과 릴리스 zip 모두에 포함
 - 2026-11-14: 기본 AI를 general-x4v3(4.9 MB)로 교체, NomosUni SPAN(1.6 MB) 추가, x4plus는 목록에 유지. v1.1.0으로 배포.
 - 보류된 리뷰 항목: WebGL 컨텍스트/텍스처 공유, NIS 1x 우회, overlay dim 구조 변경, fs API 최소화/CSP
