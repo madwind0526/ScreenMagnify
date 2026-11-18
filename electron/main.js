@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, desktopCapturer, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, desktopCapturer, globalShortcut, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Worker } = require('worker_threads');
@@ -186,13 +186,35 @@ function createMainWindow() {
     mainWindow.focus();
   });
 
+  for (const name of ['show', 'hide', 'minimize', 'restore']) mainWindow.on(name, syncRunHotkey);
   mainWindow.on('closed', () => {
     mainWindow = null;
+    syncRunHotkey();
     cancelSelection(false, 'cancelled');
     if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.destroy();
     if (resultWindow && !resultWindow.isDestroyed()) resultWindow.destroy();
     resultWindow = null;
   });
+}
+
+// Ctrl+W starts a run from anywhere, but only while the main window is shown. A minimized, hidden (selection or
+// lens in progress) or closed app does not register it, so the key keeps working in other programs then.
+const RUN_HOTKEY = 'Control+W';
+function syncRunHotkey() {
+  const active = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+  if (!active) {
+    globalShortcut.unregister(RUN_HOTKEY);
+    return;
+  }
+  if (globalShortcut.isRegistered(RUN_HOTKEY)) return;
+  try {
+    // The main window's page starts the run, so the countdown and the busy state work as for a click.
+    globalShortcut.register(RUN_HOTKEY, () => {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()) mainWindow.webContents.send('hotkey:run');
+    });
+  } catch {
+    // Another program owns the key: the button still works.
+  }
 }
 
 function toggleSettingsWindow() {
@@ -973,6 +995,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  globalShortcut.unregister(RUN_HOTKEY);
   closeOverlays();
   if (aiWorker) {
     try {

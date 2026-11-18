@@ -70,6 +70,7 @@
     }
   });
 
+  window.api.onHotkeyRun(run);
   window.api.selection.onDone(() => setBusy(false));
   window.api.onSettingsChanged(apply);
   window.api.settings.get().then(apply);

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
     maximize: () => ipcRenderer.send('window:maximize'),
     close: () => ipcRenderer.send('window:close')
   },
+  onHotkeyRun: (callback) => on('hotkey:run', callback),
   selection: {
     start: (shape) => ipcRenderer.invoke('selection:start', { shape }),
     cancel: () => ipcRenderer.send('selection:cancel'),
