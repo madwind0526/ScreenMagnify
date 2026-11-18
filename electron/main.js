@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   aiMaxSize: -1,
   theme: 'dark',
   shape: 'rect',
+  runHotkey: 'Control+W',
   lastSaveDir: '',
   customPaths: []
 };
@@ -106,6 +107,7 @@ function validateSettings() {
   // GPU-only methods fall back on the CPU (keep in sync with `fallback` in public/js/methods.js).
   if (settings.aiDevice !== 'gpu' && GPU_ONLY[settings.method]) settings.method = GPU_ONLY[settings.method];
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark';
+  if (!validHotkey(settings.runHotkey)) settings.runHotkey = DEFAULT_SETTINGS.runHotkey;
   if (typeof settings.lastSaveDir !== 'string') settings.lastSaveDir = '';
   if (!Array.isArray(settings.customPaths)) settings.customPaths = [];
   settings.customPaths = settings.customPaths
@@ -197,21 +199,34 @@ function createMainWindow() {
   });
 }
 
-// Ctrl+W starts a run from anywhere, but only while the main window is shown. A minimized, hidden (selection or
+// An accelerator is "Control"/"Alt"/"Shift" modifiers (at least Control or Alt) plus one letter, digit or F1..F24.
+function validHotkey(value) {
+  if (typeof value !== 'string') return false;
+  const parts = value.split('+');
+  const key = parts.pop();
+  if (!/^([A-Z0-9]|F([1-9]|1[0-9]|2[0-4]))$/.test(key)) return false;
+  if (new Set(parts).size !== parts.length || !parts.every((part) => ['Control', 'Alt', 'Shift'].includes(part))) return false;
+  return parts.includes('Control') || parts.includes('Alt');
+}
+
+// The run hotkey starts a capture from anywhere, but only while the main window is shown. A minimized, hidden (selection or
 // lens in progress) or closed app does not register it, so the key keeps working in other programs then.
-const RUN_HOTKEY = 'Control+W';
+let registeredHotkey = null;
+let hotkeyCapturing = false; // the settings window is recording a new key
 function syncRunHotkey() {
-  const active = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
-  if (!active) {
-    globalShortcut.unregister(RUN_HOTKEY);
-    return;
+  const active = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized() && !hotkeyCapturing;
+  const wanted = active ? settings.runHotkey : null;
+  if (registeredHotkey && registeredHotkey !== wanted) {
+    globalShortcut.unregister(registeredHotkey);
+    registeredHotkey = null;
   }
-  if (globalShortcut.isRegistered(RUN_HOTKEY)) return;
+  if (!wanted || registeredHotkey) return;
   try {
     // The main window's page starts the run, so the countdown and the busy state work as for a click.
-    globalShortcut.register(RUN_HOTKEY, () => {
+    const ok = globalShortcut.register(wanted, () => {
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()) mainWindow.webContents.send('hotkey:run');
     });
+    if (ok) registeredHotkey = wanted;
   } catch {
     // Another program owns the key: the button still works.
   }
@@ -226,13 +241,13 @@ function toggleSettingsWindow() {
   // Below the main window; when that would leave the work area, open above it instead (and keep x on screen).
   const work = screen.getDisplayMatching(bounds).workArea;
   const below = bounds.y + bounds.height + 8;
-  const settingsY = below + 390 <= work.y + work.height ? below : Math.max(work.y, bounds.y - 390 - 8);
+  const settingsY = below + 356 <= work.y + work.height ? below : Math.max(work.y, bounds.y - 356 - 8);
   const settingsX = Math.max(work.x, Math.min(bounds.x, work.x + work.width - 330));
   settingsWindow = new BrowserWindow({
     x: settingsX,
     y: settingsY,
     width: 330,
-    height: 390,
+    height: 356,
     useContentSize: true,
     resizable: false,
     maximizable: false,
@@ -282,6 +297,11 @@ function setupDisplayMediaHandler() {
 }
 
 function setupIpc() {
+  ipcMain.on('hotkey:capture', (event, on) => {
+    hotkeyCapturing = !!on;
+    syncRunHotkey();
+  });
+
   ipcMain.handle('settings:get', () => ({ ...settings, customPaths: [...settings.customPaths] }));
 
   ipcMain.handle('settings:set', (event, patch) => {
@@ -295,11 +315,13 @@ function setupIpc() {
     if ('panelCount' in patch) settings.panelCount = Math.max(1, Math.min(3, Math.round(Number(patch.panelCount) || 1)));
     if ('theme' in patch && (patch.theme === 'dark' || patch.theme === 'light')) settings.theme = patch.theme;
     if ('shape' in patch && SHAPES.includes(patch.shape)) settings.shape = patch.shape;
+    if ('runHotkey' in patch && validHotkey(patch.runHotkey)) settings.runHotkey = patch.runHotkey;
     if ('lastSaveDir' in patch && typeof patch.lastSaveDir === 'string') settings.lastSaveDir = patch.lastSaveDir;
     if ('customPaths' in patch && Array.isArray(patch.customPaths)) settings.customPaths = patch.customPaths;
     validateSettings();
     saveSettings();
     applyAlwaysOnTop();
+    syncRunHotkey();
     const snapshot = { ...settings, customPaths: [...settings.customPaths] };
     broadcast('settings:changed', snapshot);
     return snapshot;
@@ -995,7 +1017,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
-  globalShortcut.unregister(RUN_HOTKEY);
+  globalShortcut.unregisterAll();
   closeOverlays();
   if (aiWorker) {
     try {

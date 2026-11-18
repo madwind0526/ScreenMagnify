@@ -41,7 +41,7 @@ Windows 10 or 11 (64-bit). A GPU with DirectX 12 is only needed for the GPU opti
 
 ## Use
 
-1. Press the play button (or **Ctrl+Enter** in the app, or the hotkey **Ctrl+W** from anywhere) and drag over the part of the screen you want. The hotkey works only while the app is open and not minimized; then it is taken from other programs (a browser's Ctrl+W, for example), so minimize the app to use Ctrl+W there again.
+1. Press the play button (or **Ctrl+Enter** in the app, or the run hotkey from anywhere, **Ctrl+W** by default; change it in Settings) and drag over the part of the screen you want. The hotkey works only while the app is open and not minimized; then it is taken from other programs (a browser's Ctrl+W, for example), so minimize the app to use that key there again.
 2. In the result window, scroll to zoom, drag to pan, and pick a method from the list at the top. Click the save button (or **Ctrl+S**) to write a PNG.
 3. Keys in the result window: `+` and `-` zoom, `0` resets, arrow keys pan.
 
